@@ -1,0 +1,153 @@
+<html>
+<head>
+    <title>Fox Cam</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+          integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+<style type="text/css">
+    img {width:100%;}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Fox Cam</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Webcam</h5>
+                    <video autoplay="true" id="videoElement" style="width: 100%"></video>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Latest Snapshot</h5>
+                    <div id="snapshot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h5>Results GCP</h5>
+            <ul class="list-group" id="resultsGCP"></ul>
+        </div>
+        <div class="col-md-6">
+            <h5>Results AWS</h5>
+            <ul class="list-group" id="resultsAWS"></ul>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+
+    var app = {
+
+        GCP_ENDPOINT: "https://us-central1-project-3753019420464644329.cloudfunctions.net/test-1",
+        AWS_ENDPOINT: "https://us-central1-project-3753019420464644329.cloudfunctions.net/test-2",
+
+        video: document.querySelector("#videoElement"),
+        snapshot: document.querySelector("#snapshot"),
+        resultsGCP: document.querySelector("#resultsGCP"),
+        resultsAWS: document.querySelector("#resultsAWS"),
+
+        snapshotCanvas: (() => {
+            var canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+            return canvas;
+        })(),
+
+        takeSnapshot: () => {
+            var ctx = app.snapshotCanvas.getContext('2d');
+            ctx.drawImage(app.video, 0, 0, app.snapshotCanvas.width, app.snapshotCanvas.height);
+            return app.snapshotCanvas.toDataURL('image/jpeg');
+        },
+
+
+        detectLabels: (endpoint, snapshot, success) => {
+            jQuery.ajax({
+                type: 'POST',
+                url: endpoint,
+                data: {image: snapshot},
+                success: success,
+                error: console.log,
+            });
+        },
+
+        loading: (container) => {
+            container.innerHTML = `<li class="list-group-item d-flex justify-content-between align-items-center">Loading...</li>`;
+        },
+        // expect: [{label: string, score: number}]
+        renderResult: (results, container) => {
+            console.log(results);
+            container.innerHTML = results.map((result) => {
+                return `<li class="list-group-item d-flex justify-content-between align-items-center">
+    ${result.label}
+    <span class="badge badge-primary badge-pill">${result.score.toFixed(2)}%</span>
+  </li>`
+            }).join('');
+        },
+        renderResultGCP: (gcpResponse) => {
+            const results = [];
+            const annotations = gcpResponse[0].labelAnnotations;
+            annotations.forEach((annotation) => {
+                results.push({label: annotation.description, score: annotation.score*100});
+            });
+            app.renderResult(results, app.resultsGCP);
+        },
+        renderResultAWS: (awsResponse) => {
+            console.log('AWS1', awsResponse);
+            const results = [];
+            awsResponse.Labels.forEach((annotation) => {
+                results.push({label: annotation.Name, score: annotation.Confidence});
+            });
+            console.log('AWS2', results);
+            app.renderResult(results, app.resultsAWS);
+        },
+
+
+        init: () => {
+            // attach webcam to #video
+            if (navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({video: true})
+                    .then(function (stream) {
+                        app.video.srcObject = stream;
+                    })
+                    .catch(function (err0r) {
+                        console.log("Something went wrong!");
+                    });
+            }
+
+
+            // take snapshot
+            app.video.onclick = function () {
+                var preview = document.createElement('img');
+                let snapshotDataUrl = app.takeSnapshot();
+                preview.src = snapshotDataUrl;
+                app.snapshot.innerHTML = "";
+                app.snapshot.appendChild(preview);
+
+                // remove "data:image/jpeg;base64," from the beginning to get raw base64
+                app.loading(app.resultsGCP);
+                app.loading(app.resultsAWS);
+                app.detectLabels(app.GCP_ENDPOINT, snapshotDataUrl.substr(23), app.renderResultGCP);
+                app.detectLabels(app.AWS_ENDPOINT, snapshotDataUrl.substr(23), app.renderResultAWS);
+            }
+        },
+    };
+    app.init();
+
+
+</script>
+<script src="https://code.jquery.com/jquery-3.3.1.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+        crossorigin="anonymous"></script>
+</body>
+</html>
